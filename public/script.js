@@ -33,8 +33,6 @@ let targetTextareaForUpload = null;
 
 
 // --- FUNÇÕES DE COMUNICAÇÃO COM O BACKEND ---
-
-/** Carrega todas as conversas salvas do servidor. */
 async function loadAndDisplayChatList() {
     try {
         const response = await fetch('/api/chats');
@@ -56,7 +54,6 @@ async function loadAndDisplayChatList() {
     } catch (error) { console.error("Erro ao carregar a lista de conversas:", error); }
 }
 
-/** Carrega uma conversa específica do servidor. */
 async function loadChat(chatId) {
     try {
         const response = await fetch(`/api/chats/${chatId}`);
@@ -77,7 +74,6 @@ async function loadChat(chatId) {
     } catch (error) { console.error("Erro ao carregar a conversa:", error); }
 }
 
-/** Envia uma mensagem para o backend para obter uma resposta da IA. */
 async function fetchFromBackend(history, chatId) {
     try {
         const response = await fetch('/api/chat', {
@@ -159,7 +155,7 @@ function startNewChat() {
     currentChatId = null;
     chatHistory = [];
     if (isAgentMode) toggleView();
-    chatContainer.innerHTML = `<div id="welcome-screen" class="text-center"><h2 class="text-4xl font-bold text-slate-700">Como posso ajudar?</h2><p class="text-slate-500 mt-2">Digite sua pergunta abaixo para começar.</p></div>`;
+    chatContainer.innerHTML = `<div id="welcome-screen" class="text-center h-full flex flex-col justify-center items-center"><h2 class="text-4xl font-bold text-slate-700">Como posso ajudar?</h2><p class="text-slate-500 mt-2">Digite sua pergunta abaixo ou anexe um ficheiro para começar.</p></div>`;
     chatTitle.textContent = 'Nova Conversa';
     chatInput.disabled = false;
     chatInput.placeholder = "Digite sua pergunta aqui...";
@@ -217,7 +213,7 @@ async function runAgent() {
     }
     runAgentBtn.disabled = true;
     toggleView();
-    currentChatId = null; // Agente sempre cria uma nova conversa
+    currentChatId = null;
     chatHistory = [];
     chatContainer.innerHTML = '';
     const contextPrompt = `**Contexto Inicial Fornecido:**\n\n>${context.replace(/\n/g, '\n>')}\n\n---`;
@@ -231,7 +227,7 @@ async function runAgent() {
         const result = await fetchFromBackend(chatHistory, currentChatId);
         showTypingIndicator(false);
         if (result.response) {
-            currentChatId = result.chatId; // Atualiza o ID da conversa
+            currentChatId = result.chatId;
             chatHistory.push({ role: "model", parts: [{ text: result.response }] });
             addMessageToUI('model', result.response, 'step-result');
         } else {
@@ -258,7 +254,7 @@ chatForm.addEventListener('submit', async (e) => {
     showTypingIndicator(false);
     
     if (result.response) {
-        currentChatId = result.chatId; // Atualiza o ID da conversa
+        currentChatId = result.chatId;
         addMessageToUI('model', result.response);
         chatHistory.push({ role: "model", parts: [{ text: result.response }] });
     } else {
@@ -289,7 +285,6 @@ chatInput.addEventListener('input', () => {
 // --- INICIALIZAÇÃO DA APLICAÇÃO ---
 window.addEventListener('load', () => {
     loadAndDisplayChatList();
-    chatContainer.innerHTML = `<div id="welcome-screen" class="text-center h-full flex flex-col justify-center items-center"><h2 class="text-4xl font-bold text-slate-700">Bem-vindo ao Assistente Jurídico</h2><p class="text-slate-500 mt-2">Selecione uma conversa ou clique em "Nova Conversa".</p></div>`;
-    chatTitle.textContent = 'Assistente Jurídico';
+    startNewChat(); // CORREÇÃO: Inicia uma nova conversa ao carregar a página
     createStepElement(1);
 });
