@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente Jurídico IA</title>
+    <link href="style.css" rel="stylesheet" type="text/css" />
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide-react@0.395.0/dist/umd/lucide.min.js"></script>
+    <!-- Bibliotecas para Leitura de Ficheiros -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 flex h-screen overflow-hidden">
+
+    <!-- Barra Lateral -->
+    <aside class="bg-slate-200 w-64 p-4 flex-shrink-0 hidden md:flex flex-col">
+        <button id="new-chat-btn" class="flex items-center justify-between bg-white p-2 rounded-lg shadow-sm hover:bg-slate-50 transition-colors">
+            <span class="font-semibold">Nova Conversa</span>
+            <i data-lucide="plus-square"></i>
+        </button>
+        <div class="mt-6 flex-1 overflow-y-auto">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Recentes</h3>
+            <ul id="recent-chats-list" class="mt-2 space-y-1"></ul>
+        </div>
+        <div class="mt-auto">
+            <a href="#" class="flex items-center p-2 rounded-lg hover:bg-slate-300 text-sm"><i data-lucide="help-circle" class="mr-2 h-4 w-4"></i> Ajuda</a>
+            <a href="#" class="flex items-center p-2 rounded-lg hover:bg-slate-300 text-sm"><i data-lucide="settings" class="mr-2 h-4 w-4"></i> Configurações</a>
+        </div>
+    </aside>
+
+    <!-- Área Principal -->
+    <main class="flex-1 flex flex-col h-screen bg-white">
+        <header class="flex items-center justify-between p-4 border-b border-slate-200">
+            <div class="flex items-center gap-4">
+                 <h1 id="chat-title" class="text-lg font-semibold truncate pr-4">Assistente Jurídico</h1>
+                 <button id="toggle-agent-mode" class="flex items-center gap-2 px-3 py-1 border border-slate-300 rounded-lg text-sm hover:bg-slate-100">
+                    <i data-lucide="bot" class="h-4 w-4"></i>
+                    <span id="agent-mode-text">Modo Agente</span>
+                </button>
+            </div>
+            <div class="w-8 h-8 bg-slate-800 text-white flex items-center justify-center rounded-full font-bold">U</div>
+        </header>
+
+        <!-- Container do Conteúdo (Chat ou Agente) -->
+        <div id="content-container" class="flex-1 flex flex-col overflow-hidden">
+            <!-- Tela de Chat -->
+            <div id="chat-view" class="flex-1 flex flex-col h-full">
+                <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-4"></div>
+            </div>
+
+            <!-- Tela de Configuração do Agente -->
+            <div id="agent-view" class="hidden flex-1 flex-col h-full p-6 overflow-y-auto">
+                <h2 class="text-2xl font-bold text-slate-700">Configurar Agente de Tarefas</h2>
+                <div class="mt-6">
+                    <div class="flex justify-between items-center">
+                        <label for="initial-context" class="block text-sm font-medium text-slate-700">Contexto Inicial</label>
+                        <button id="upload-context-btn" class="p-1 text-slate-500 hover:text-blue-600" title="Anexar ficheiro (.txt, .docx, .pdf)">
+                            <i data-lucide="paperclip" class="h-5 w-5"></i>
+                        </button>
+                    </div>
+                    <textarea id="initial-context" rows="8" class="mt-1 block w-full rounded-md bg-slate-50 border-slate-300 shadow-sm" placeholder="Cole o seu texto aqui ou anexe um ficheiro..."></textarea>
+                </div>
+                <div class="mt-6">
+                    <h3 class="text-lg font-semibold">Etapas da Automação</h3>
+                    <div id="steps-container" class="mt-2 space-y-4"></div>
+                    <button id="add-step-btn" class="mt-4 flex items-center gap-2 px-4 py-2 border border-dashed border-slate-400 rounded-lg text-sm hover:bg-slate-100">
+                        <i data-lucide="plus" class="h-4 w-4"></i> Adicionar Etapa
+                    </button>
+                </div>
+                <div class="mt-8 pt-4 border-t">
+                    <button id="run-agent-btn" class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-blue-300">
+                        Executar Agente
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de Input (apenas para o chat) -->
+        <div id="input-area" class="p-4 border-t border-slate-200 bg-white">
+            <div class="max-w-3xl mx-auto">
+                <form id="chat-form" class="relative">
+                    <button type="button" id="upload-chat-btn" class="absolute left-3 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-blue-600" title="Anexar ficheiro (.txt, .docx, .pdf)">
+                        <i data-lucide="paperclip" class="h-5 w-5"></i>
+                    </button>
+                    <textarea id="chat-input" placeholder="Inicie uma nova conversa..." class="w-full p-4 pl-12 pr-20 rounded-lg bg-slate-100 border-2 border-transparent focus:border-blue-500 focus:outline-none resize-none" rows="1" disabled></textarea>
+                    <button type="submit" id="send-button" class="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-slate-800 text-white rounded-full hover:bg-slate-700 disabled:bg-slate-400" disabled>
+                        <i data-lucide="arrow-up"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Input de ficheiro oculto -->
+        <input type="file" id="file-input" class="hidden" accept=".txt,.pdf,.docx">
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
