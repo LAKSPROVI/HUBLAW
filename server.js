@@ -22,7 +22,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash"});
 
 // Middlewares - Funções que preparam os pedidos
-app.use(express.json()); // Para conseguir ler o corpo dos pedidos em JSON
+// Aumenta o limite do corpo da requisição para 50mb para permitir o upload de ficheiros
+app.use(express.json({ limit: '50mb' })); // Para conseguir ler o corpo dos pedidos em JSON
 app.use(express.static(path.join(__dirname, 'public'))); // Para servir os ficheiros estáticos (HTML, CSS, JS do frontend)
 
 // --- ROTAS DA API ---
@@ -79,12 +80,14 @@ app.post('/api/chat', async (req, res) => {
 
         history.push({ role: 'model', parts: [{ text: aiText }] });
 
-        const title = history[0].parts[0].text.substring(0, 100);
         const historyJson = JSON.stringify(history);
 
         if (chatId) {
-            await db.run('UPDATE chats SET history = ?, title = ? WHERE id = ?', [historyJson, title, chatId]);
+            // Se a conversa já existe, atualiza apenas o histórico
+            await db.run('UPDATE chats SET history = ? WHERE id = ?', [historyJson, chatId]);
         } else {
+            // Se é uma nova conversa, cria um título e insere no banco
+            const title = history[0].parts[0].text.substring(0, 100);
             const result = await db.run('INSERT INTO chats (title, history) VALUES (?, ?)', [title, historyJson]);
             chatId = result.lastID;
         }
