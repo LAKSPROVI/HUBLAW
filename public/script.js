@@ -30,9 +30,51 @@ let chatHistory = [];
 let currentChatId = null;
 let isAgentMode = false;
 let targetTextareaForUpload = null;
+let pollingInterval = null;
 
 
 // --- FUNÇÕES DE COMUNICAÇÃO COM O BACKEND ---
+
+function startPolling(chatId) {
+    if (pollingInterval) clearInterval(pollingInterval); // Limpa polling anterior
+
+    pollingInterval = setInterval(async () => {
+        const chat = await fetchChat(chatId); // Usa uma nova função para não recarregar a UI inteira
+        if (chat) {
+            // Atualiza o histórico e renderiza de novo
+            chatHistory = JSON.parse(chat.history);
+            renderChat();
+
+            // Para o polling se o agente terminou
+            if (chat.status === 'completed' || chat.status === 'failed') {
+                stopPolling();
+                runAgentBtn.disabled = false;
+                loadAndDisplayChatList(); // Atualiza o ícone de status na lista
+            }
+        }
+    }, 3000); // A cada 3 segundos
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+// Nova função para buscar dados do chat sem manipular a UI principal
+async function fetchChat(chatId) {
+    try {
+        const response = await fetch(`/api/chats/${chatId}`);
+        if (!response.ok) throw new Error('Falha ao buscar dados do chat');
+        return await response.json();
+    } catch (error) {
+        console.error(`Erro ao buscar chat ${chatId}:`, error);
+        stopPolling(); // Para o polling se houver erro de rede
+        return null;
+    }
+}
+
 async function loadAndDisplayChatList() {
     try {
         const response = await fetch('/api/chats');
@@ -45,33 +87,66 @@ async function loadAndDisplayChatList() {
         }
         for (const chat of chats) {
             const listItem = document.createElement('li');
-            listItem.className = 'p-2 rounded-lg hover:bg-slate-300 cursor-pointer text-sm truncate';
-            listItem.textContent = chat.title;
+            // Adiciona classes para flexbox para alinhar o título e o ícone
+            listItem.className = 'p-2 rounded-lg hover:bg-slate-300 cursor-pointer text-sm truncate flex justify-between items-center';
+
+            let statusIcon = '';
+            if (chat.type === 'agent') {
+                switch (chat.status) {
+                    case 'running':
+                        statusIcon = '<i data-lucide="loader-2" class="animate-spin h-4 w-4 text-blue-500"></i>';
+                        break;
+                    case 'completed':
+                        statusIcon = '<i data-lucide="check-circle" class="h-4 w-4 text-green-600"></i>';
+                        break;
+                    case 'failed':
+                        statusIcon = '<i data-lucide="x-circle" class="h-4 w-4 text-red-600"></i>';
+                        break;
+                }
+            }
+
+            // Cria o conteúdo do item da lista com o título e o ícone
+            listItem.innerHTML = `<span>${chat.title}</span>${statusIcon}`;
             listItem.dataset.chatId = chat.id;
             listItem.addEventListener('click', () => loadChat(chat.id));
             recentChatsList.appendChild(listItem);
         }
+        // Recria os ícones do Lucide depois de modificar o DOM
+        lucide.createIcons();
     } catch (error) { console.error("Erro ao carregar a lista de conversas:", error); }
 }
 
 async function loadChat(chatId) {
     try {
-        const response = await fetch(`/api/chats/${chatId}`);
-        const chat = await response.json();
-        
-        chatHistory = JSON.parse(chat.history);
+        stopPolling(); // Para qualquer polling anterior antes de carregar um novo chat
+        const chat = await fetchChat(chatId);
+        if (!chat) return; // Se fetchChat falhar
+
         currentChatId = chatId;
-        
+        chatHistory = JSON.parse(chat.history);
+
+        // Se o utilizador estiver na vista de agente, muda para a vista de chat
         if (isAgentMode) toggleView();
+
         renderChat();
         
         chatTitle.textContent = chat.title;
         chatInput.disabled = false;
         chatInput.placeholder = "Digite sua pergunta aqui...";
+
+        // Atualiza a lista de conversas para marcar a ativa
         document.querySelectorAll('#recent-chats-list li').forEach(li => {
-            li.classList.toggle('active-chat', li.dataset.chatId === chatId);
+            li.classList.toggle('active-chat', li.dataset.chatId == chatId);
         });
-    } catch (error) { console.error("Erro ao carregar a conversa:", error); }
+
+        // Inicia o polling se for um agente em execução
+        if (chat.type === 'agent' && chat.status === 'running') {
+            startPolling(chatId);
+        }
+
+    } catch (error) {
+        console.error("Erro ao carregar a conversa:", error);
+    }
 }
 
 async function fetchFromBackend(history, chatId) {
@@ -152,12 +227,14 @@ function createStepElement(index) {
     lucide.createIcons();
 }
 function startNewChat() {
+    stopPolling();
     currentChatId = null;
     chatHistory = [];
     if (isAgentMode) toggleView();
     chatContainer.innerHTML = `<div id="welcome-screen" class="text-center h-full flex flex-col justify-center items-center"><h2 class="text-4xl font-bold text-slate-700">Como posso ajudar?</h2><p class="text-slate-500 mt-2">Digite sua pergunta abaixo ou anexe um ficheiro para começar.</p></div>`;
     chatTitle.textContent = 'Nova Conversa';
     chatInput.disabled = false;
+    runAgentBtn.disabled = false; // Garante que o botão de agente está ativo
     chatInput.placeholder = "Digite sua pergunta aqui...";
     chatInput.focus();
     document.querySelectorAll('#recent-chats-list li').forEach(li => li.classList.remove('active-chat'));
@@ -212,32 +289,31 @@ async function runAgent() {
         return;
     }
     runAgentBtn.disabled = true;
-    toggleView();
-    currentChatId = null;
-    chatHistory = [];
-    chatContainer.innerHTML = '';
-    const contextPrompt = `**Contexto Inicial Fornecido:**\n\n>${context.replace(/\n/g, '\n>')}\n\n---`;
-    addMessageToUI('user', contextPrompt);
-    chatHistory.push({ role: "user", parts: [{ text: contextPrompt }] });
-    for (let i = 0; i < steps.length; i++) {
-        const stepPrompt = steps[i];
-        addMessageToUI('system', `Executando Etapa ${i + 1}/${steps.length}: ${stepPrompt}`, 'step-header');
-        chatHistory.push({ role: "user", parts: [{ text: stepPrompt }] });
-        showTypingIndicator(true);
-        const result = await fetchFromBackend(chatHistory, currentChatId);
-        showTypingIndicator(false);
-        if (result.response) {
-            currentChatId = result.chatId;
-            chatHistory.push({ role: "model", parts: [{ text: result.response }] });
-            addMessageToUI('model', result.response, 'step-result');
-        } else {
-            addMessageToUI('model', 'Erro na etapa.', 'step-result');
-            break; 
+
+    try {
+        const response = await fetch('/api/agent/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context, steps })
+        });
+
+        if (response.status !== 202) { // 202 Accepted
+            const err = await response.json();
+            throw new Error(err.error || `HTTP error! Status: ${response.status}`);
         }
+
+        const { chatId } = await response.json();
+
+        // Carrega a nova conversa do agente e inicia o polling
+        await loadChat(chatId);
+        // Atualiza a lista de conversas para mostrar o novo agente em execução
+        await loadAndDisplayChatList();
+
+    } catch (error) {
+        console.error("Erro ao iniciar o agente:", error);
+        alert(`Ocorreu um erro ao iniciar o agente: ${error.message}`);
+        runAgentBtn.disabled = false;
     }
-    addMessageToUI('system', '✅ Agente concluiu todas as etapas.', 'step-header');
-    await loadAndDisplayChatList();
-    runAgentBtn.disabled = false;
 }
 
 chatForm.addEventListener('submit', async (e) => {

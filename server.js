@@ -4,6 +4,7 @@ const path = require('path');
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { executeAgent } = require('./agent-logic.js');
 require('dotenv').config(); // Para carregar a chave de API de forma segura
 
 // Configuração inicial
@@ -30,7 +31,7 @@ app.use(express.static(path.join(__dirname, 'public'))); // Para servir os fiche
 // Rota para obter a lista de todas as conversas
 app.get('/api/chats', async (req, res) => {
     try {
-        const chats = await db.all('SELECT id, title FROM chats ORDER BY id DESC');
+        const chats = await db.all('SELECT id, title, type, status FROM chats ORDER BY id DESC');
         res.json(chats);
     } catch (error) {
         res.status(500).json({ error: 'Erro ao buscar conversas.' });
@@ -50,6 +51,38 @@ app.get('/api/chats/:id', async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar a conversa.' });
     }
 });
+
+// Rota para iniciar a execução de um agente
+app.post('/api/agent/run', async (req, res) => {
+    const { context, steps } = req.body;
+
+    if (!context || !steps || steps.length === 0) {
+        return res.status(400).json({ error: 'Contexto e pelo menos uma etapa são obrigatórios.' });
+    }
+
+    try {
+        const title = `Agente: ${steps[0].substring(0, 50)}...`;
+        // Começa com um histórico vazio, que será preenchido pelo agente
+        const initialHistory = JSON.stringify([]);
+
+        const result = await db.run(
+            "INSERT INTO chats (title, history, type, status) VALUES (?, ?, 'agent', 'running')",
+            [title, initialHistory]
+        );
+        const chatId = result.lastID;
+
+        // Inicia a execução em segundo plano (NÃO USAR AWAIT)
+        executeAgent(chatId, context, steps, db, model);
+
+        // Responde imediatamente ao cliente
+        res.status(202).json({ chatId });
+
+    } catch (error) {
+        console.error('Erro ao iniciar o agente:', error);
+        res.status(500).json({ error: 'Ocorreu um erro no servidor ao iniciar o agente.' });
+    }
+});
+
 
 // Rota principal para interagir com a IA
 app.post('/api/chat', async (req, res) => {
@@ -98,6 +131,8 @@ app.post('/api/chat', async (req, res) => {
 });
 
 
+
+
 // --- INICIALIZAÇÃO DO SERVIDOR E BANCO DE DADOS ---
 async function startServer() {
     db = await open({
@@ -110,7 +145,9 @@ async function startServer() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             history TEXT NOT NULL,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            type TEXT DEFAULT 'chat' NOT NULL,
+            status TEXT
         )
     `);
 
