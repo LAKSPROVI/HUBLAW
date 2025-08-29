@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "chromadb": "^1.8.1",
     "@google/generative-ai": "^0.2.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
